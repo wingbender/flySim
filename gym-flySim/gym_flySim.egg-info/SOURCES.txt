@@ -1,0 +1,7 @@
+README.md
+setup.py
+gym_flySim.egg-info/PKG-INFO
+gym_flySim.egg-info/SOURCES.txt
+gym_flySim.egg-info/dependency_links.txt
+gym_flySim.egg-info/requires.txt
+gym_flySim.egg-info/top_level.txt
