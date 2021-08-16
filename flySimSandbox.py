@@ -45,9 +45,48 @@ def wing_angles(psi, theta, phi, omega, delta_psi, delta_theta, c, k, t):
     return angles, angles_dot
 
 
+class AeroModel(object):
+    def __init__(self, span, chord, rho, r22, clmax, cdmax, cd0, hinge_loc, ac_loc):
+        self.s = span * chord * np.pi / 4
+        self.rho = rho
+        self.r22 = r22
+        self.clmax = clmax
+        self.cdmax = cdmax
+        self.cd0 = cd0
+        self.span_hat = np.array([1, 0, 0])
+        self.hinge_location = hinge_loc
+        self.ac_loc = ac_loc
+
+    def get_forces(self, aoa, v_wing, rotation_mat_body2lab, rotation_mat_wing2lab, rotation_mat_sp2lab):
+        cl = self.clmax * sin(2 * aoa)
+        cd = (self.cdmax + self.cd0) / 2 - (self.cdmax - self.cd0) / 2 * cos(2 * aoa)
+        u = v_wing[0] ** 2 + v_wing[1] ** 2 + v_wing[2] ** 2
+        uhat = v_wing / norm(v_wing)
+        span_hat = self.span_hat
+        lhat = (np.cross(span_hat, -uhat)).T  # perpendicular to Uhat
+        lhat = lhat / norm(lhat)
+        q = self.rho * self.s * self.r22 * u
+        drag = -0.5 * cd * q * uhat
+        lift = 0.5 * cl * q * lhat
+        rot_mat_spw2lab = rotation_mat_sp2lab @ rotation_mat_wing2lab
+        ac_loc_lab = rot_mat_spw2lab @ self.ac_loc.T + rotation_mat_body2lab @ self.hinge_location.T  # AC location in lab axes
+        ac_loc_body = rotation_mat_body2lab.T @ ac_loc_lab  # AC location in body axes
+
+        f_lab_aero = rot_mat_spw2lab @ lift + rot_mat_spw2lab @ drag
+        # force in body axes
+        f_body = rotation_mat_body2lab.T @ f_lab_aero
+        t_lab = np.cross(ac_loc_lab.T,
+                         f_lab_aero).T  # + cross(ACLocB_body, Dbod).T # torque on body (in body axes)
+        # (from forces, no CM0)
+        t_body = np.cross(ac_loc_body.T,
+                          f_body).T  # + cross(ACLocB_lab, Dbod_lab) # torque on body( in bodyaxes)
+        # (from forces, no CM0)
+        return cl, cd, span_hat, lhat, drag, lift, t_body, f_body, f_lab_aero, t_lab
+
+
 def aero_model(aero, gen, wing_inp, wing_rl, v_wing, aoa, ac_loc_wing, rotation_mat_body2lab,
                rotation_mat_wing2lab, rotation_mat_sp2lab):
-    s = wing_inp['span'] * wing_inp['cord'] * np.pi / 4
+    s = wing_inp['span'] * wing_inp['chord'] * np.pi / 4
 
     cl = aero['CLmax'] * sin(2 * aoa)
     cd = (aero['CDmax'] + aero['CD0']) / 2 - (aero['CDmax'] - aero['CD0']) / 2 * cos(2 * aoa)
@@ -75,22 +114,22 @@ def aero_model(aero, gen, wing_inp, wing_rl, v_wing, aoa, ac_loc_wing, rotation_
 
 
 def rot_mat_body2lab(angles):
-    # return Rotation.from_euler('xyz', angles[0:3]).as_matrix()
-    psi_w = angles[0]
-    theta_w = angles[1]
-    phi_w = angles[2]
-    Rx = np.array([[1, 0, 0],
-                   [0, cos(psi_w), - sin(psi_w)],
-                   [0, sin(psi_w), cos(psi_w)]])
-    Ry = np.array([[cos(theta_w), 0, sin(theta_w)],
-                   [0, 1, 0],
-                   [-sin(theta_w), 0, cos(theta_w)]])
-    Rz = np.array([[cos(phi_w), -sin(phi_w), 0],
-                   [sin(phi_w), cos(phi_w), 0],
-                   [0, 0, 1]])
-    return np.round(Rz @ Ry @ Rx * 100000000) / 100000000
-
-    return Rz @ Ry @ Rx
+    return Rotation.from_euler('xyz', angles[0:3]).as_matrix()
+    # psi_w = angles[0]
+    # theta_w = angles[1]
+    # phi_w = angles[2]
+    # Rx = np.array([[1, 0, 0],
+    #                [0, cos(psi_w), - sin(psi_w)],
+    #                [0, sin(psi_w), cos(psi_w)]])
+    # Ry = np.array([[cos(theta_w), 0, sin(theta_w)],
+    #                [0, 1, 0],
+    #                [-sin(theta_w), 0, cos(theta_w)]])
+    # Rz = np.array([[cos(phi_w), -sin(phi_w), 0],
+    #                [sin(phi_w), cos(phi_w), 0],
+    #                [0, 0, 1]])
+    # return np.round(Rz @ Ry @ Rx * 100000000) / 100000000
+    #
+    # return Rz @ Ry @ Rx
 
 
 class FlySim(object):
@@ -115,7 +154,7 @@ class FlySim(object):
             'ACloc': np.array([2.5 / 1000 * 0.7, 0, 0]),  # used to calculate the torque around body(wing ax) [m]
             'freq': 220 * np.pi * 2,  # wing frequency[rad / s]
             'span': 2.5 / 1000,  # span[m]
-            'cord': 0.7 / 1000,  # cord[m]
+            'chord': 0.7 / 1000,  # chord[m]
             'speedCalc': np.array([2.5 / 1000, 0, 0])
             # location on wing used to calculate the wing's tangential velocity
         }
@@ -125,6 +164,7 @@ class FlySim(object):
             'BodIniang': np.array([0, -45, 0]) * DEG2RAD,  # body initial angle(lab ax) [rad]
             'BodInipqr': np.array([0, 0, 0]),  # body initial angular velocity[m / s]
             'BodIniXYZ': np.array([0, 0, 0]),  # body initial position(lab ax) [m]
+            'BodRefPitch': -45 * DEG2RAD
         }
         self.gen = {
             'm': 1e-6,  # mass[kg]
@@ -147,13 +187,19 @@ class FlySim(object):
             'CD0': 0.4,
             'r22': 0.4,
         }
+        self.aero_model_R = AeroModel(self.wing['span'], self.wing['chord'], self.gen['rho'], self.aero['r22'],
+                                      self.aero['CLmax'], self.aero['CDmax'], self.aero['CD0'], self.wing['hingeR'],
+                                      self.wing['ACloc'])
+        self.aero_model_L = AeroModel(self.wing['span'], self.wing['chord'], self.gen['rho'], self.aero['r22'],
+                                      self.aero['CLmax'], self.aero['CDmax'], self.aero['CD0'], self.wing['hingeL'],
+                                      self.wing['ACloc'])
         self.state = None
 
     def reset(self):
-        x0 = np.concatenate(
-            [self.body['BodIniVel'],
-             self.body['BodInipqr'],
-             self.body['BodIniang']]).T
+        x0 = np.concatenate([
+            self.body['BodIniVel'],
+            self.body['BodInipqr'],
+            self.body['BodIniang']]).T
         u0 = np.concatenate([
             self.wing['psi'][0:2],
             self.wing['theta'][0:2],
@@ -166,8 +212,33 @@ class FlySim(object):
 
     def calc_u(self, action):
         if self.gen['controlled']:
-            print(action)
-            raise NotImplementedError
+            # print(action)
+            delta_phi = action[0]
+            u0 = np.concatenate([
+                self.wing['psi'][0:2],
+                self.wing['theta'][0:2],
+                self.wing['phi'][0:2],
+                self.wing['psi'][2:4],
+                self.wing['theta'][2: 4],
+                self.wing['phi'][2:4]]).T
+            u0[4] = self.wing['phi'][0] - delta_phi / 2
+            u0[5] = self.wing['phi'][1] + delta_phi / 2
+            u0[10] = self.wing['phi'][2] + delta_phi / 2
+            u0[11] = self.wing['phi'][3] - delta_phi / 2
+            # u0 = np.concatenate(
+            #     # psi0_L
+            #     # psim_L  psim_R = -psim_L;
+            #     # theta0_L theta0_R = theta0_L
+            #     # thetam_L thetam_R = thetam_L
+            #     # phi0_L phi0_R = -phi0_L
+            #     # phim_L phim_R = -phim_L[rad]
+            #     # phi0_R phi0_R = -phi0_L
+            #     # phim_R phim_R = -phim_L[rad]
+            #     # psi0_R  psi0_R = 90
+            #     # psim_R  psim_R = -psim_L
+            #     # theta0_R theta0_R = theta0_L
+            #     # thetam_R thetam_R = thetam_L [rad]
+            # )
         else:
             u0 = np.concatenate([
                 self.wing['psi'][0:2],
@@ -184,7 +255,9 @@ class FlySim(object):
                 self.gen['time4Tau'][0] < self.gen['t'] < self.gen['time4Tau'][1])
         if self.gen['controlled']:
             u = self.calc_u(action)
-            sol = solve_ivp(self._fly_sim, [0, self.wing['T']], self.state[:9], method='RK45', t_eval=[self.wing['T']],
+            tvec = np.linspace(0, self.wing['T'], 5)
+            y0 = self.state[:9, -1] if self.state.ndim > 1 else self.state[:9]
+            sol = solve_ivp(self._fly_sim, [0, self.wing['T']], y0, method='RK45', t_eval=tvec,
                             args=[tau_ext, u],
                             atol=1e-5, rtol=1e-4)
         else:
@@ -238,14 +311,14 @@ class FlySim(object):
 
         angles, angles_dot = wing_angles(u1, u2, u3, self.wing['freq'], self.wing['delta_psi'],
                                          self.wing['delta_theta'], self.wing['C'], self.wing['K'], t)
-        r_wing2lab = rot_mat_body2lab(angles)
-        r_sp2lab = rot_mat_body2lab(self.gen['strkplnAng'])
-        r_body2lab = rot_mat_body2lab(np.array([x7, x8, x9]))
-        r_spwithbod2lab = r_body2lab @ r_sp2lab
-        # r_wing2lab = Rotation.from_euler('xyz', [angles[0], angles[1], angles[2]]).as_matrix()
-        # r_sp2lab = Rotation.from_euler('xyz', self.gen['strkplnAng']).as_matrix()
-        # r_body2lab = Rotation.from_euler('xyz', [x7, x8, x9]).as_matrix()
+        # r_wing2lab = rot_mat_body2lab(angles)
+        # r_sp2lab = rot_mat_body2lab(self.gen['strkplnAng'])
+        # r_body2lab = rot_mat_body2lab(np.array([x7, x8, x9]))
         # r_spwithbod2lab = r_body2lab @ r_sp2lab
+        r_wing2lab = Rotation.from_euler('xyz', [angles[0], angles[1], angles[2]]).as_matrix()
+        r_sp2lab = Rotation.from_euler('xyz', self.gen['strkplnAng']).as_matrix()
+        r_body2lab = Rotation.from_euler('xyz', [x7, x8, x9]).as_matrix()
+        r_spwithbod2lab = r_body2lab @ r_sp2lab
 
         # Wing velocity
         angular_vel = body_ang_vel_pqr(angles, angles_dot, True)
@@ -260,24 +333,34 @@ class FlySim(object):
         vb_wing = r_wing2lab.T @ vb_lab
         vw = vb_wing + tang_wing_v.T
         alpha = np.arctan2(vw[2], vw[1])
-        cl, cd, span_hat, lhat, drag, lift, t_body, f_body_aero, f_lab_aero, t_lab = aero_model(self.aero,
-                                                                                                self.gen,
-                                                                                                self.wing,
-                                                                                                wing_rl, vw, alpha,
-                                                                                                self.wing['ACloc'],
-                                                                                                r_body2lab,
-                                                                                                r_wing2lab,
-                                                                                                r_spwithbod2lab)
+        if wing_rl == 'R':
+            cl, cd, span_hat, lhat, drag, lift, t_body, f_body_aero, f_lab_aero, t_lab = self.aero_model_R.get_forces(
+                alpha, vw,
+                r_body2lab,
+                r_wing2lab,
+                r_spwithbod2lab)
+        if wing_rl == 'L':
+            cl, cd, span_hat, lhat, drag, lift, t_body, f_body_aero, f_lab_aero, t_lab = self.aero_model_L.get_forces(
+                alpha, vw,
+                r_body2lab,
+                r_wing2lab,
+                r_spwithbod2lab)
+        # cl, cd, span_hat, lhat, drag, lift, t_body, f_body_aero, f_lab_aero, t_lab = aero_model(self.aero,
+        #                                                                                         self.gen,
+        #                                                                                         self.wing,
+        #                                                                                         wing_rl, vw, alpha,
+        #                                                                                         self.wing['ACloc'],
+        #                                                                                         r_body2lab,
+        #                                                                                         r_wing2lab,
+        #                                                                                         r_spwithbod2lab)
         return (f_body_aero, t_body, r_body2lab, r_wing2lab, r_spwithbod2lab, cl, cd, angles.T,
                 span_hat, lhat, drag, lift, f_lab_aero, t_lab, ac_lab)
 
 
-def test(vec, recalc):
-
+def test(vec, recalc, plot):
     if recalc:
         for i in vec.keys():
             fsim = FlySim()
-
             fsim.wing['psi'] = np.array([90, 53, 90, -53]) * DEG2RAD
             fsim.wing['theta'] = np.array([0, 0, 0, 0]) * DEG2RAD
             fsim.wing['phi'] = np.array([90, 65, -90, -65]) * DEG2RAD
@@ -298,7 +381,8 @@ def test(vec, recalc):
             state, _, _, info = fsim.step([0])
             np.save(f'./ValidationVectors/results{i}', np.vstack((state, info)))
             print(f'finished test case {i}')
-    plotVarVec(vec)
+    if plot:
+        plotVarVec(vec)
 
 
 def plotVarVec(vec):
@@ -399,8 +483,36 @@ def get_test_vec():
             'strkplnAng', [5, 40, 15]
         ),
     }
+    # vec = {
+    #     1: None
+    # }
     return vec
 
 
+def test_control():
+    Ki = 0.5
+    Kp = 8 / 1000
+    body_ref_pitch = -45 * DEG2RAD
+    fsim = FlySim()
+    fsim.gen['controlled'] = True
+    state = fsim.reset()
+    states = []
+    for i in range(100):
+        if state.ndim < 2:
+            delta_phi = 0
+        else:
+            states.append(state)
+            theta = np.mean(state[7, [1, 3]])
+            theta_dot = body_ang_vel_pqr(state[6:9, [1, 3]].mean(axis=1), state[3:6, [1, 3]].mean(axis=1), False)[1]
+            delta_phi = theta_dot * Kp + (theta - (body_ref_pitch)) * Ki
+        state, _, _, _ = fsim.step([delta_phi])
+    np.save(f'./Results/controlled_Kp={Kp}_Ki={Ki}', np.hstack(states))
+
+
 if __name__ == '__main__':
-    test(get_test_vec(), True)
+    # test(get_test_vec(), True, True)  # 3.8-3.5
+    import time
+    start = time.time()
+    test_control()
+    end = time.time()
+    print(end-start)
