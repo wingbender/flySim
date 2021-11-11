@@ -345,14 +345,6 @@ class FlySim(object):
                 r_body2lab,
                 r_wing2lab,
                 r_spwithbod2lab)
-        # cl, cd, span_hat, lhat, drag, lift, t_body, f_body_aero, f_lab_aero, t_lab = aero_model(self.aero,
-        #                                                                                         self.gen,
-        #                                                                                         self.wing,
-        #                                                                                         wing_rl, vw, alpha,
-        #                                                                                         self.wing['ACloc'],
-        #                                                                                         r_body2lab,
-        #                                                                                         r_wing2lab,
-        #                                                                                         r_spwithbod2lab)
         return (f_body_aero, t_body, r_body2lab, r_wing2lab, r_spwithbod2lab, cl, cd, angles.T,
                 span_hat, lhat, drag, lift, f_lab_aero, t_lab, ac_lab)
 
@@ -510,7 +502,7 @@ def test_control():
 
 
 if __name__ == '__main__':
-    # test(get_test_vec(), True, True)  # 3.8-3.5
+    test(get_test_vec(), True, True)  # 3.8-3.5
     import time
     start = time.time()
     test_control()
