@@ -272,8 +272,10 @@ class flySimEnv(gym.Env):
         x7to9dot = body_ang_vel_pqr(np.array([x7, x8, x9]), omega_b, False)
         y_dot = np.concatenate([x1to3dot, x4to6dot, x7to9dot])
         if True:
-            mask = [1,0,1,0,]
-        return y_dot
+            mask = [1,0,1,0,1,0,0,1,0]
+        else:
+            mask = [1,1,1,1,1,1,1,1,1]
+        return y_dot*mask
 
     def wing_block(self, x1, x2, x3, x4, x5, x6, x7, x8, x9, u1, u2, u3, wing_rl, t):
 
