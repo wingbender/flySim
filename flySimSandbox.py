@@ -475,9 +475,9 @@ def get_test_vec():
             'strkplnAng', [5, 40, 15]
         ),
     }
-    # vec = {
-    #     1: None
-    # }
+    vec = {
+        1: None
+    }
     return vec
 
 
@@ -503,8 +503,8 @@ def test_control():
 
 if __name__ == '__main__':
     test(get_test_vec(), True, True)  # 3.8-3.5
-    import time
-    start = time.time()
-    test_control()
-    end = time.time()
-    print(end-start)
+    # import time
+    # start = time.time()
+    # test_control()
+    # end = time.time()
+    # print(end-start)

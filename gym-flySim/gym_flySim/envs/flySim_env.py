@@ -154,7 +154,7 @@ class flySimEnv(gym.Env):
             'TauExt': np.array([0, 0, 0]) * 1e-7,  # external torque body axes[Nm]
             'time4Tau': np.array([10, 15]),  # initial and final time of the external torque[ms]
             'I': 1.0e-12 * np.array([[0.1440, 0, 0], [0, 0.5220, 0], [0, 0, 0.5220]]),  # tensor of inertia[Kg m ^ 2]
-            'controlled': True,
+            'controlled': True,  # If true, calculate for each step, False for debugging against matlab version
             't': 0,
             'tsim_in': 0.0,  # simulation initial time[s]
             'tsim_fin': 0.1,
@@ -179,30 +179,38 @@ class flySimEnv(gym.Env):
                                             )  # psi,theta,phi
         self.action_space = spaces.Box(-0.1, +0.1, (1,), dtype=np.float32)
         self.ranom_start = False
-        # self.spaces = {'observation':self.observation_space,'action': self.action_space}
 
     def step(self, action):
         self.gen['t'] += 1
         tau_ext = self.gen['TauExt'] * (
                 self.gen['time4Tau'][0] < self.gen['t'] < self.gen['time4Tau'][1])
         u = self.calc_u(action)
-        if self.gen['controlled']:
+        if not hasattr(self, 'y0'):
+            self.y0 = self.state[:9]
+        if self.gen['controlled']:  # To calculate one step
 
             tvec = np.linspace(0, self.wing['T'], 5)
-            y0 = self.state[:9, -1] if self.state.ndim > 1 else self.state[:9]
-            sol = solve_ivp(self._fly_sim, [0, self.wing['T']], y0, method='RK45', t_eval=tvec,
+
+            sol = solve_ivp(self._fly_sim, [0, self.wing['T']], self.y0, method='RK45', t_eval=tvec,
                             args=[tau_ext, u],
-                            atol=1e-5, rtol=1e-4)
-        else:
-            tvec = np.arange(self.gen['tsim_in'], self.gen['tsim_fin'], self.gen['MaxStepSize'])
-            sol = solve_ivp(self._fly_sim, [self.gen['tsim_in'], self.gen['tsim_fin']], self.state[:9], method='RK45',
+                            atol=1e-6, rtol=1e-5)
+            # atol=1e-5, rtol=1e-4)
+        else:  # To calculate all flight
+            tvec = np.arange(self.gen['tsim_in'], self.gen['tsim_fin'], self.wing['T'] / 4)  # self.gen['MaxStepSize'])
+            sol = solve_ivp(self._fly_sim, [self.gen['tsim_in'], self.gen['tsim_fin']], self.y0, method='RK45',
                             t_eval=tvec,
                             args=[tau_ext, u],
                             atol=1e-6, rtol=1e-5)
+            avg_sol = (sol.y[:, 3::4] + sol.y[:, 1::4]) / 2
+            # avg_sol[6:9] = avg_sol[6:9] % np.pi * np.sign(avg_sol[6:9])
+
+            return avg_sol.T, 0, False, 'none'
+        self.y0 = sol.y[:, -1]
+
         self.state = np.mean(sol.y[:, [1, 3]], axis=1)
-        self.state[6:9] = self.state[6:9] % np.pi * np.sign(self.state[6:9])
+        # self.state[6:9] = self.state[6:9] % np.pi * np.sign(self.state[6:9])
         reward = 360 * DEG2RAD - np.abs(self.state[7])
-        done = self.gen['t'] == 100
+        done = self.gen['t'] >= self.gen['tsim_fin'] / self.wing['T']
         info = {'t': sol.t}
 
         return self.state, reward, done, info
@@ -216,24 +224,19 @@ class flySimEnv(gym.Env):
             rnd_vel = np.zeros(3)
             rnd_pqr = np.zeros(3)
             rnd_ang = np.zeros(3)
+
         x0 = np.concatenate([
             self.body['BodIniVel'] + rnd_vel,
             self.body['BodInipqr'] + rnd_pqr,
             self.body['BodIniang'] + rnd_ang]).T
-        # u0 = np.concatenate([
-        #     self.wing['psi'][0:2],
-        #     self.wing['theta'][0:2],
-        #     self.wing['phi'][0:2],
-        #     self.wing['psi'][2:4],
-        #     self.wing['theta'][2: 4],
-        #     self.wing['phi'][2:4]]).T
-        # self.state = np.concatenate([x0, u0])
         self.state = x0
         self.gen['t'] = 0
+        if self.gen['controlled']:
+            _ = self.step([0])
         return self.state
 
     def render(self, mode='human'):
-        raise NotImplementedError
+        return NotImplementedError('No Vis yet')
 
     def close(self):
         return None
@@ -256,23 +259,17 @@ class flySimEnv(gym.Env):
         u4 = u0[6:8]  # psi wing R
         u5 = u0[8:10]  # theta wing R
         u6 = u0[10:12]  # phi wing R
-        if not self.gen['controlled']:
-            tau_ext = self.gen['TauExt'] * (
-                    self.gen['time4Tau'][0] / 1000.0 <= t <= self.gen['time4Tau'][1] / 1000.0)
         wingout_r = self.wing_block(x1, x2, x3, x4, x5, x6, x7, x8, x9, u4, u5, u6, 'R', t)
         wingout_l = self.wing_block(x1, x2, x3, x4, x5, x6, x7, x8, x9, u1, u2, u3, 'L', t)
         vb = np.array([x1, x2, x3])
         fb = wingout_r[0] + wingout_l[0] + self.gen['m'] * wingout_r[2].T @ self.gen['g'].T
         tb = wingout_r[1] + wingout_l[1] + tau_ext
-        # body = np.concatenate([fb, tb])
 
         omega_b = np.array([x4, x5, x6]).T
         x1to3dot = (1 / self.gen['m']) * fb - np.cross(omega_b, vb)
         x4to6dot = inv(self.gen['I']) @ (tb - np.cross(omega_b, self.gen['I'] @ omega_b))
         x7to9dot = body_ang_vel_pqr(np.array([x7, x8, x9]), omega_b, False)
         y_dot = np.concatenate([x1to3dot, x4to6dot, x7to9dot])
-        if True:
-            mask = [1,0,1,0,]
         return y_dot
 
     def wing_block(self, x1, x2, x3, x4, x5, x6, x7, x8, x9, u1, u2, u3, wing_rl, t):
@@ -287,6 +284,7 @@ class flySimEnv(gym.Env):
         # Wing velocity
         angular_vel = body_ang_vel_pqr(angles, angles_dot, True)
         tang_wing_v = np.cross(angular_vel, self.wing['speedCalc'])
+
         # Body velocity
         ac_lab = r_spwithbod2lab @ r_wing2lab @ self.wing['speedCalc']
         ac_bod = r_body2lab.T @ ac_lab
@@ -313,48 +311,27 @@ class flySimEnv(gym.Env):
                 span_hat, lhat, drag, lift, f_lab_aero, t_lab, ac_lab)
 
     def calc_u(self, action):
-        if self.gen['controlled']:
-            # print(action)
-            delta_phi = action[0]
-            u0 = np.concatenate([
-                self.wing['psi'][0:2],
-                self.wing['theta'][0:2],
-                self.wing['phi'][0:2],
-                self.wing['psi'][2:4],
-                self.wing['theta'][2: 4],
-                self.wing['phi'][2:4]]).T
-            u0[4] = self.wing['phi'][0] - delta_phi / 2
-            u0[5] = self.wing['phi'][1] + delta_phi / 2
-            u0[10] = self.wing['phi'][2] + delta_phi / 2
-            u0[11] = self.wing['phi'][3] - delta_phi / 2
-            # u0 = np.concatenate(
-            #     # psi0_L
-            #     # psim_L  psim_R = -psim_L;
-            #     # theta0_L theta0_R = theta0_L
-            #     # thetam_L thetam_R = thetam_L
-            #     # phi0_L phi0_R = -phi0_L
-            #     # phim_L phim_R = -phim_L[rad]
-            #     # phi0_R phi0_R = -phi0_L
-            #     # phim_R phim_R = -phim_L[rad]
-            #     # psi0_R  psi0_R = 90
-            #     # psim_R  psim_R = -psim_L
-            #     # theta0_R theta0_R = theta0_L
-            #     # thetam_R thetam_R = thetam_L [rad]
-            # )
-        else:
-            u0 = np.concatenate([
-                self.wing['psi'][0:2],
-                self.wing['theta'][0:2],
-                self.wing['phi'][0:2],
-                self.wing['psi'][2:4],
-                self.wing['theta'][2: 4],
-                self.wing['phi'][2:4]]).T
+        u0 = np.concatenate([
+            self.wing['psi'][0:2],
+            self.wing['theta'][0:2],
+            self.wing['phi'][0:2],
+            self.wing['psi'][2:4],
+            self.wing['theta'][2: 4],
+            self.wing['phi'][2:4]]).T
+
+        delta_phi = action[0]
+
+        u0[4] = self.wing['phi'][0] - delta_phi / 2
+        u0[5] = self.wing['phi'][1] + delta_phi / 2
+        u0[10] = self.wing['phi'][2] + delta_phi / 2
+        u0[11] = self.wing['phi'][3] - delta_phi / 2
         return u0
 
 
 def test_zero_cont():
     import time
-    env = gym.make('flySim-v0')
+    # env = gym.make('flySim-v0')
+    env = flySimEnv()
     env.gen['controlled'] = False
     o = env.reset()
     observations = []
@@ -365,15 +342,17 @@ def test_zero_cont():
     start = time.time()
     observations, _, _, info = env.step([0])
     end = time.time()
-    print(f'100 zero control continuous steps completed in {end - start} seconds')
-    observations = np.array(observations)
+    print(f'{len(observations)} zero control continuous steps completed in {end - start} seconds')
+    # observations = np.array(observations.y).T
     print(f'total reward for no control is: {np.sum(rewards)}')
     np.savez('test_res_zero_cont', observations=observations)
 
 
 def test_zero():
     import time
-    env = gym.make('flySim-v0')
+    # env = gym.make('flySim-v0')
+    env = flySimEnv()
+    env.gen['controlled'] = True
     o = env.reset()
     observations = []
     actions = []
@@ -381,7 +360,8 @@ def test_zero():
     dones = []
     infos = []
     start = time.time()
-    for ii in range(100):
+    d = False
+    while not d:
         observations.append(o)
         a = 0
         o, r, d, info = env.step([a])
@@ -390,7 +370,7 @@ def test_zero():
         dones.append(d)
         infos.append(info)
     end = time.time()
-    print(f'100 zero control steps completed in {end - start} seconds')
+    print(f'{len(rewards)} zero control steps completed in {end - start} seconds')
     actions = np.array(actions)
     rewards = np.array(rewards)
     observations = np.array(observations)
@@ -400,7 +380,9 @@ def test_zero():
 
 def test_random():
     import time
-    env = gym.make('flySim-v0')
+    # env = gym.make('flySim-v0')
+    env = flySimEnv()
+    env.gen['controlled'] = True
     o = env.reset()
     observations = []
     actions = []
@@ -408,7 +390,8 @@ def test_random():
     dones = []
     infos = []
     start = time.time()
-    for ii in range(100):
+    d = False
+    while not d:
         observations.append(o)
         a = env.action_space.sample()
         o, r, d, info = env.step(a)
@@ -417,7 +400,7 @@ def test_random():
         dones.append(d)
         infos.append(info)
     end = time.time()
-    print(f'100 random steps completed in {end - start} seconds')
+    print(f'{len(rewards)} random steps completed in {end - start} seconds')
     actions = np.array(actions)
     rewards = np.array(rewards)
     observations = np.array(observations)
@@ -430,8 +413,10 @@ def test_linear():
     Ki = 0.5
     Kp = 8 / 1000
     body_ref_pitch = -45 * DEG2RAD
-
-    env = gym.make('flySim-v0')
+    # body_ref_pitch = 45 * DEG2RAD
+    # env = gym.make('flySim-v0')
+    env = flySimEnv()
+    env.gen['controlled'] = True
     o = env.reset()
     observations = []
     actions = []
@@ -439,9 +424,10 @@ def test_linear():
     dones = []
     infos = []
     start = time.time()
-    for ii in range(100):
+    d = False
+    while not d:
         theta = o[7]
-        theta_dot = body_ang_vel_pqr(o[6:9], o[3:6], False)[1]
+        theta_dot = body_ang_vel_pqr(o[6:9], o[3:6], False)[1]  # * DEG2RAD
         delta_phi = theta_dot * Kp + (theta - (body_ref_pitch)) * Ki
         a = [delta_phi]
         observations.append(o)
@@ -451,7 +437,7 @@ def test_linear():
         dones.append(d)
         infos.append(info)
     end = time.time()
-    print(f'100 linear control steps completed in {end - start} seconds')
+    print(f'{len(rewards)} linear control steps completed in {end - start} seconds')
     actions = np.array(actions)
     rewards = np.array(rewards)
     observations = np.array(observations)
@@ -461,7 +447,7 @@ def test_linear():
 
 if __name__ == '__main__':
     print(f'maximal reward possible is: {360 * DEG2RAD * 100}')
-    test_zero_cont()
-    test_zero()
-    test_random()
+    # test_zero_cont()
+    # test_zero()
+    # test_random()
     test_linear()
