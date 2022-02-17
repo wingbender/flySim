@@ -224,11 +224,18 @@ class flySimEnv(gym.Env):
             rnd_vel = np.zeros(3)
             rnd_pqr = np.zeros(3)
             rnd_ang = np.zeros(3)
-
         x0 = np.concatenate([
             self.body['BodIniVel'] + rnd_vel,
             self.body['BodInipqr'] + rnd_pqr,
             self.body['BodIniang'] + rnd_ang]).T
+        # u0 = np.concatenate([
+        #     self.wing['psi'][0:2],
+        #     self.wing['theta'][0:2],
+        #     self.wing['phi'][0:2],
+        #     self.wing['psi'][2:4],
+        #     self.wing['theta'][2: 4],
+        #     self.wing['phi'][2:4]]).T
+        # self.state = np.concatenate([x0, u0])
         self.state = x0
         self.gen['t'] = 0
         if self.gen['controlled']:
@@ -264,6 +271,7 @@ class flySimEnv(gym.Env):
         vb = np.array([x1, x2, x3])
         fb = wingout_r[0] + wingout_l[0] + self.gen['m'] * wingout_r[2].T @ self.gen['g'].T
         tb = wingout_r[1] + wingout_l[1] + tau_ext
+        # body = np.concatenate([fb, tb])
 
         omega_b = np.array([x4, x5, x6]).T
         x1to3dot = (1 / self.gen['m']) * fb - np.cross(omega_b, vb)
