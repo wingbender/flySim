@@ -113,7 +113,8 @@ class AeroModel(object):
 class flySimEnv(gym.Env):
     metadata = {'render.modes': ['human']}
 
-    def __init__(self):
+    def __init__(self,random_start=False):
+        super(flySimEnv, self).__init__()
         self.wing = {
             # wing angles
             'psi': np.array([90, 53, 90, -53]) * DEG2RAD,
@@ -142,12 +143,12 @@ class flySimEnv(gym.Env):
         self.body = {
             'BodIniVel': np.array([0, 0, 0]),  # body initial velocity(body ax) [m / s]
             'BodIniang': np.array([0, -45, 0]) * DEG2RAD,  # body initial angle(lab ax) [rad]
-            'BodInipqr': np.array([0, 0, 0]),  # body initial angular velocity[m / s]
+            'BodInipqr': np.array([0, 0, 1000])*DEG2RAD,  # body initial angular velocity[rad / s]
             'BodIniXYZ': np.array([0, 0, 0]),  # body initial position(lab ax) [m]
             'BodRefPitch': -45 * DEG2RAD
         }
         self.gen = {
-            'm': 1e-6,  # mass[kg]
+            'm': 1e-6*0.88,  # mass[kg]
             'g': np.array([0, 0, -9.8]),  # gravity[m / s ^ 2]
             'strkplnAng': np.array([0, 45, 0]) * DEG2RAD,  # stroke plane(compare to body) [rad]
             'rho': 1.225,  # air density
@@ -216,10 +217,10 @@ class flySimEnv(gym.Env):
         return self.state, reward, done, info
 
     def reset(self):
-        if self.ranom_start:
-            rnd_vel = np.random.normal(0, 0.1, size=(3,))
-            rnd_pqr = np.random.normal(0, 100, size=(3,))
-            rnd_ang = np.random.normal(0, 2 * DEG2RAD, size=(3,))
+        if self.random_start:
+            rnd_vel = np.random.uniform(0, 1, size=(3,)) *self.random_bound['vel']
+            rnd_pqr = np.random.uniform(0, 1, size=(3,)) *self.random_bound['pqr']
+            rnd_ang = np.random.uniform(0, 1, size=(3,)) *self.random_bound['ang']
         else:
             rnd_vel = np.zeros(3)
             rnd_pqr = np.zeros(3)
@@ -454,7 +455,7 @@ def test_linear():
 
 
 if __name__ == '__main__':
-    print(f'maximal reward possible is: {360 * DEG2RAD * 100}')
+    # print(f'maximal reward possible is: {360 * DEG2RAD * 100}')
     # test_zero_cont()
     # test_zero()
     # test_random()
