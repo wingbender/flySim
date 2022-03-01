@@ -180,7 +180,6 @@ class flySimEnv(gym.Env):
                                             )  # psi,theta,phi
         self.action_space = spaces.Box(-0.1, +0.1, (1,), dtype=np.float32)
         if random_start:
-            print('Randomising initial conditions')
             self._seed = seed
             self._rng = np.random.default_rng(seed=1234 if seed is None else seed)
         self.random_start = random_start
@@ -275,7 +274,7 @@ class flySimEnv(gym.Env):
     def seed(self, seed):
         self._seed = seed
         self._rng = np.random.default_rng(seed)
-        print(f'initial rng.random={self._rng.uniform()}')
+        # print(f'initial rng.random={self._rng.uniform()}')
 
     def _fly_sim(self, t, y, tau_ext, u0):
 
