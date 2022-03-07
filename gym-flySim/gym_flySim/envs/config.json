@@ -1,0 +1,62 @@
+{
+    "gen": {
+        "m": 8.8e-07,
+        "g": [0.0,0.0,-9.8],
+        "strkplnAng": [0.0,45,0.0],
+        "rho": 1.225,
+        "TauExt": [0.0,0.0,0.0],
+        "time4Tau": [10, 15],
+        "I": [
+            [   0.144,  0.0,   0.0      ],
+            [   0.0,    0.522, 0.0      ],
+            [   0.0,    0.0,   0.522    ]
+        ],
+        "controlled": true,
+        "t": 0,
+        "tsim_in": 0.0,
+        "tsim_fin": 0.1,
+        "MaxStepSize": 6.25e-05,
+        "Convert_values": true
+    },
+    "random": {
+        "randomize": false,
+        "seed": 1234,
+        "vel": [0.2,  0.2,  0.2 ],
+        "pqr": [0.0,  2400,  0.0],
+        "ang": [0.0,  60, 0.0]
+    },
+    "aero": {
+        "CLmax": 1.8,
+        "CDmax": 3.4,
+        "CD0": 0.4,
+        "r22": 0.4
+    },
+    "wing": {
+        "psi": [90, 53, 90, -53],
+        "theta": [0.0,0.0,0.0,0.0],
+        "phi":[90, 65, -90, -65],
+        "delta_psi": -90,
+        "delta_theta": 90,
+        "C": 2.4,
+        "K": 0.7,
+        "hingeR": [0.0001,0.0,0.0001],
+        "hingeL": [0.0001,0.0,0.0001],
+        "ACloc": [0.0017499999999999998,0.0,0.0],
+        "bps": 220,
+        "span": 0.0025,
+        "chord": 0.0007,
+        "speedCalc": [0.0025,0.0,0.0]
+    },
+    "body" : {
+         "BodIniVel": [0, 0.1, 0],
+         "BodIniang": [0, -45, 0],
+         "BodInipqr": [0, 0, 0],
+         "BodIniXYZ": [0, 0, 0],
+         "BodRefPitch": -45
+     },
+    "solver": {
+      "method": "RK45",
+      "atol": 1e-6,
+      "rtol": 1e-5
+    }
+}
