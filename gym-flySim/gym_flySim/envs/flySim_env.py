@@ -42,6 +42,9 @@ CONVERSIONS_FACTORS = {
         "BodIniang": DEG2RAD,
         "BodInipqr": DEG2RAD,
         "BodRefPitch": DEG2RAD
+    },
+    "solver":{
+
     }
 
 }
@@ -233,7 +236,8 @@ class flySimEnv(gym.Env):
         if config_path is not None:
             self.load_config(config_path)
         else:
-            self.load_config('./config.json')
+            function_directory = os.path.dirname(__file__)
+            self.load_config(os.path.join(function_directory,'config.json'))
 
         if hasattr(self.random, 'seed'):
             self._rng = np.random.default_rng(self.random['seed'])
