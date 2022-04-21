@@ -45,6 +45,9 @@ CONVERSIONS_FACTORS = {
     },
     "solver":{
 
+    },
+    "reward":{
+
     }
 
 }
@@ -235,9 +238,11 @@ class flySimEnv(gym.Env):
 
         if config_path is not None:
             self.load_config(config_path)
+            print(f'config loaded from:{config_path}')
         else:
             function_directory = os.path.dirname(__file__)
             self.load_config(os.path.join(function_directory,'config.json'))
+            print(f'running with environment default configuration')
 
         if hasattr(self.random, 'seed'):
             self._rng = np.random.default_rng(self.random['seed'])
@@ -266,6 +271,10 @@ class flySimEnv(gym.Env):
         self.gen = config['gen']
         self.random = config['random']
         self.solver = config['solver']
+        if hasattr(config,'reward'):
+            self.reward = config['reward']
+        else:
+            self.reward = None
         self.wing['omega'] = self.wing['bps'] * 2 * np.pi
         self.wing['T'] = 1 / self.wing['bps']
 
@@ -302,12 +311,11 @@ class flySimEnv(gym.Env):
 
         self.state = np.mean(sol.y[:, [1, 3]], axis=1)
         done = self.gen['t'] >= self.gen['tsim_fin'] / self.wing['T']
-        if np.abs(self.state[7] / DEG2RAD + 45) <= 5 and np.abs(self.state[4]) / DEG2RAD <= 10:
-            reward = 200
-            self.tot_rwd += reward
-            if self.tot_rwd == 200:
-                test = 0
-            done = True
+        if self.reward is not None and self.reward['target']:
+            if np.abs(self.state[7] / DEG2RAD + 45) <= 5 and np.abs(self.state[4]) / DEG2RAD <= 10:
+                reward = self.reward['target']
+                self.tot_rwd += reward
+                done = True
         else:
             reward = -0.1 * (np.abs(self.state[7] / DEG2RAD + 45) % 360)
             self.tot_rwd += reward

@@ -58,5 +58,11 @@
       "method": "RK45",
       "atol": 1e-6,
       "rtol": 1e-5
+    },
+    "reward": {
+        "target" : false,
+        "target_reward": 200,
+        "target_value_min": null,
+        "target_value_max": null,
     }
 }
