@@ -19,7 +19,7 @@ import sys
 # Constants
 DEG2RAD = np.pi / 180
 
-#TODO: integrate this into the configuration file
+# TODO: integrate this into the configuration file
 CONVERSIONS_FACTORS = {
     "gen": {
         "strkplnAng": DEG2RAD,
@@ -43,10 +43,10 @@ CONVERSIONS_FACTORS = {
         "BodInipqr": DEG2RAD,
         "BodRefPitch": DEG2RAD
     },
-    "solver":{
+    "solver": {
 
     },
-    "reward":{
+    "reward": {
 
     }
 
@@ -82,7 +82,8 @@ def body_ang_vel_pqr(angles, angles_dot, get_pqr):
 
 def wing_angles(psi, theta, phi, omega, delta_psi, delta_theta, c, k, t):
     """
-    computes the wing angles given a set of variables, described in (TODO: ask roni for the article)
+    computes the wing angles given a set of variables, described in (see Whithead et al, "Pitch perfect: how fruit flies
+     control their body pitch angle." 2015, appendix 1)
     :param psi: [psi0_L psim_L psi0_R psim_R].psi0_R = 90, psim_R = -psim_L;
     :param theta: [theta0_L thetam_L theta0_R thetam_R].theta0_R = theta0_L, thetam_R =Wing.thetam_L[rad]
     :param phi: [phi0_L phim_L phi0_R phim_R].phi0_R = -phi0_L, phim_R = -phim_L[rad]
@@ -241,7 +242,7 @@ class flySimEnv(gym.Env):
             print(f'config loaded from:{config_path}')
         else:
             function_directory = os.path.dirname(__file__)
-            self.load_config(os.path.join(function_directory,'config.json'))
+            self.load_config(os.path.join(function_directory, 'config.json'))
             print(f'running with environment default configuration')
 
         if hasattr(self.random, 'seed'):
@@ -271,7 +272,7 @@ class flySimEnv(gym.Env):
         self.gen = config['gen']
         self.random = config['random']
         self.solver = config['solver']
-        if hasattr(config,'reward'):
+        if hasattr(config, 'reward'):
             self.reward = config['reward']
         else:
             self.reward = None
@@ -302,7 +303,8 @@ class flySimEnv(gym.Env):
 
         else:  # To calculate all flight
             tvec = np.arange(self.gen['tsim_in'], self.gen['tsim_fin'], self.wing['T'] / 4)  # self.gen['MaxStepSize'])
-            sol = solve_ivp(self._fly_sim, [self.gen['tsim_in'], self.gen['tsim_fin']], self.y0, method=self.solver['method'],
+            sol = solve_ivp(self._fly_sim, [self.gen['tsim_in'], self.gen['tsim_fin']], self.y0,
+                            method=self.solver['method'],
                             t_eval=tvec, args=[tau_ext, u], atol=self.solver['atol'], rtol=self.solver['rtol'])
             avg_sol = (sol.y[:, 3::4] + sol.y[:, 1::4]) / 2
 
@@ -435,12 +437,15 @@ class flySimEnv(gym.Env):
             self.wing['theta'][2: 4],
             self.wing['phi'][2:4]]).T
 
-        delta_phi = action[0]
+        # delta_clip prevents the wings from going over 180 or under 0 degrees
+        delta_clip = min(self.wing['phi'][0] - self.wing['phi'][1], # Calculation of backwards for left wing
+                         180 * DEG2RAD - self.wing['phi'][2] + self.wing['phi'][3]) # Same calculation for fwd
+        delta_phi = min(action[0], delta_clip)
 
-        u0[4] = self.wing['phi'][0] - delta_phi / 2
-        u0[5] = self.wing['phi'][1] + delta_phi / 2
-        u0[10] = self.wing['phi'][2] + delta_phi / 2
-        u0[11] = self.wing['phi'][3] - delta_phi / 2
+        u0[4] = self.wing['phi'][0] - delta_phi / 2  # Change in middle point of the stroke (Left)
+        u0[5] = self.wing['phi'][1] + delta_phi / 2  # Change in the amplitude of the stroke (Left)
+        u0[10] = self.wing['phi'][2] + delta_phi / 2  # Change in middle point of the stroke (Right)
+        u0[11] = self.wing['phi'][3] - delta_phi / 2  # Change in the amplitude of the stroke (Right)
         return u0
 
 
@@ -570,4 +575,3 @@ if __name__ == '__main__':
     # # with mp.Pool(6) as p:
     # #     p.starmap(test_linear,zip(range(100),seeds))
     # for i in range(100):
-
