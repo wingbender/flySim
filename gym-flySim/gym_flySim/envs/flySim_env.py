@@ -250,6 +250,10 @@ class flySimEnv(gym.Env):
         else:
             self._rng = np.random.default_rng()
 
+    def pitch_angle_over_88(self, t, y, *args):
+        abs_minus_88 = np.abs(y[7] / DEG2RAD) - 88
+        return abs_minus_88
+
     def load_config(self, config_path):
 
         ### Load the configuration file
@@ -299,7 +303,8 @@ class flySimEnv(gym.Env):
             tvec = np.linspace(0, self.wing['T'], 5)
 
             sol = solve_ivp(self._fly_sim, [0, self.wing['T']], self.y0, method=self.solver['method'], t_eval=tvec,
-                            args=[tau_ext, u], atol=self.solver['atol'], rtol=self.solver['rtol'])
+                            args=[tau_ext, u], atol=self.solver['atol'], rtol=self.solver['rtol'],
+                            events=self.pitch_angle_over_88)
 
         else:  # To calculate all flight
             tvec = np.arange(self.gen['tsim_in'], self.gen['tsim_fin'], self.wing['T'] / 4)  # self.gen['MaxStepSize'])
@@ -321,6 +326,10 @@ class flySimEnv(gym.Env):
         else:
             reward = -0.1 * (np.abs(self.state[7] / DEG2RAD + 45) % 360)
             self.tot_rwd += reward
+        if len(sol.t_events[0]) >= 1:
+            reward = -200
+            self.tot_rwd += reward
+            done = True
         if done:
             self.tot_rwd = 0
 

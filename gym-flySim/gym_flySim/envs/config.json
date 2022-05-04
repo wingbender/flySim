@@ -19,7 +19,7 @@
         "Convert_values": true
     },
     "random": {
-        "randomize": false,
+        "randomize": true,
         "seed": 1234,
         "vel": [0.2,  0.2,  0.2 ],
         "pqr": [0.0,  2400,  0.0],
@@ -63,6 +63,6 @@
         "target" : false,
         "target_reward": 200,
         "target_value_min": null,
-        "target_value_max": null,
+        "target_value_max": null
     }
 }
