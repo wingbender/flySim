@@ -20,10 +20,10 @@
     },
     "random": {
         "randomize": true,
-        "seed": 1234,
-        "vel": [0.2,  0.2,  0.2 ],
-        "pqr": [0.0,  2400,  0.0],
-        "ang": [0.0,  60, 0.0]
+        "seed": 1111,
+        "vel": [0.0,  0.0,  0.0 ],
+        "pqr": [0.0,  600,  0.0],
+        "ang": [0.0,  40, 0.0]
     },
     "aero": {
         "CLmax": 1.8,
@@ -41,14 +41,14 @@
         "K": 0.7,
         "hingeR": [0.0001,0.0,0.0001],
         "hingeL": [0.0001,0.0,0.0001],
-        "ACloc": [0.0017499999999999998,0.0,0.0],
+        "ACloc": [0.00175,0.0,0.0],
         "bps": 220,
         "span": 0.0025,
         "chord": 0.0007,
         "speedCalc": [0.0025,0.0,0.0]
     },
     "body" : {
-         "BodIniVel": [0, 0.1, 0],
+         "BodIniVel": [0, 0, 0],
          "BodIniang": [0, -45, 0],
          "BodInipqr": [0, 0, 0],
          "BodIniXYZ": [0, 0, 0],
@@ -63,6 +63,8 @@
         "target" : false,
         "target_reward": 200,
         "target_value_min": null,
-        "target_value_max": null
+        "target_value_max": null,
+        "gains": [0.0,0.0,0.0,0.0,-0.0005,0.0,0.0,-0.1,0.0],
+        "set_point": [0,0,0,0,0,0,0,-45,0]
     }
 }

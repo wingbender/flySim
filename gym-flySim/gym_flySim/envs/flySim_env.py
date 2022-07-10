@@ -276,7 +276,7 @@ class flySimEnv(gym.Env):
         self.gen = config['gen']
         self.random = config['random']
         self.solver = config['solver']
-        if hasattr(config, 'reward'):
+        if 'reward' in config:
             self.reward = config['reward']
         else:
             self.reward = None
@@ -323,8 +323,17 @@ class flySimEnv(gym.Env):
                 reward = self.reward['target']
                 self.tot_rwd += reward
                 done = True
+        elif 'gains' in self.reward:
+            obs_temp = self.state.copy()
+            obs_temp[3:] = obs_temp[3:] / DEG2RAD  # Convert angles and angular velocities to degrees
+            obs_temp = obs_temp - self.reward['set_point']  # from absolute values to errors w.r.t set point
+            obs_temp = np.abs(
+                obs_temp)  # this makes sure we only give negative reward (remember, this is not a controller gain)
+            obs_temp[7:] = obs_temp[7:] % 360  # if we're back where we started we want to stay there
+            reward = sum(self.reward['gains'] * obs_temp)
+            # reward = self.reward['gains'][7]* (np.abs(self.state[7] / DEG2RAD + 45) % 360)+...
         else:
-            reward = -0.1 * (np.abs(self.state[7] / DEG2RAD + 45) % 360)
+            reward = -0.1 * (np.abs(self.state[7] / DEG2RAD + 45) % 360) #- 0.0005 * (np.abs(self.state[4] / DEG2RAD))
             self.tot_rwd += reward
         if len(sol.t_events[0]) >= 1:
             reward = -200
@@ -447,8 +456,8 @@ class flySimEnv(gym.Env):
             self.wing['phi'][2:4]]).T
 
         # delta_clip prevents the wings from going over 180 or under 0 degrees
-        delta_clip = min(self.wing['phi'][0] - self.wing['phi'][1], # Calculation of backwards for left wing
-                         180 * DEG2RAD - self.wing['phi'][2] + self.wing['phi'][3]) # Same calculation for fwd
+        delta_clip = min(self.wing['phi'][0] - self.wing['phi'][1],  # Calculation of backwards for left wing
+                         180 * DEG2RAD - self.wing['phi'][2] + self.wing['phi'][3])  # Same calculation for fwd
         delta_phi = min(action[0], delta_clip)
 
         u0[4] = self.wing['phi'][0] - delta_phi / 2  # Change in middle point of the stroke (Left)
