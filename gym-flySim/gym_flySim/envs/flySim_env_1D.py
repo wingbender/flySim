@@ -149,93 +149,15 @@ class AeroModel(object):
         return cl, cd, span_hat, lhat, drag, lift, t_body, f_body, f_lab_aero, t_lab
 
 
-class flySimEnv(gym.Env):
+class flySimEnv_1D(gym.Env):
     metadata = {'render.modes': ['human']}
 
     def __init__(self, config_path=None):
-        super(flySimEnv, self).__init__()
+        super(flySimEnv_1D, self).__init__()
         self.state = None
-        self.observation_space = spaces.Box(-np.inf, np.inf, shape=(9,))
+        self.observation_space = spaces.Box(-np.inf, np.inf, shape=(5,))  #[u,v,q,theta,theta_ref]
         self.action_space = spaces.Box(-0.1, +0.1, (2,), dtype=np.float32)
         self.tot_rwd = 0
-        ## This is the old initialization before config.json, here for reference and will be deleted in future commit
-        if False:
-            self.wing = {
-                # wing angles
-                'psi': np.array([90, 53, 90, -53]) * DEG2RAD,
-                # [psi0_L psim_L psi0_R psim_R].psi0_R = 90, psim_R = -psim_L;
-                'theta': np.array([0, 0, 0, 0]) * DEG2RAD,
-                # [theta0_L thetam_L theta0_R thetam_R].theta0_R = theta0_L, thetam_R =Wing.thetam_L[rad]
-                'phi': np.array([90, 65, -90, -65]) * DEG2RAD,
-                # [phi0_L phim_L phi0_R phim_R].phi0_R = -phi0_L, phim_R = -phim_L[rad]
-                # wing angles phase
-                'delta_psi': -90 * DEG2RAD,  # [rad]
-                'delta_theta': 90 * DEG2RAD,  # [rad]
-                # wave wakk (Roni)
-                'C': 2.4,
-                'K': 0.7,
-                # wing locations
-                'hingeR': np.array([0.0001, 0, 0.0001]),  # right wing hinge location in body axes[m]
-                'hingeL': np.array([0.0001, 0, 0.0001]),  # left wing hinge location in body axes[m]
-                'ACloc': np.array([2.5 / 1000 * 0.7, 0, 0]),  # used to calculate the torque around body(wing ax) [m]
-                'omega': 220 * np.pi * 2,  # wing angular velocity[rad / s]
-                'span': 2.5 / 1000,  # span[m]
-                'chord': 0.7 / 1000,  # chord[m]
-                'speedCalc': np.array([2.5 / 1000, 0, 0])
-                # location on wing used to calculate the wing's tangential velocity
-            }
-            self.wing['T'] = 1.0 / (self.wing['omega'] / 2.0 / np.pi)  # seconds
-            self.body = {
-                'BodIniVel': np.array([0, 0, 0]),  # body initial velocity(body ax) [m / s]
-                'BodIniang': np.array([0, -45, 0]) * DEG2RAD,  # body initial angle(lab ax) [rad]
-                'BodInipqr': np.array([0, 0, 1000]) * DEG2RAD,  # body initial angular velocity[rad / s]
-                'BodIniXYZ': np.array([0, 0, 0]),  # body initial position(lab ax) [m]
-                'BodRefPitch': -45 * DEG2RAD
-            }
-            self.gen = {
-                'm': 1e-6 * 0.88,  # mass[kg]
-                'g': np.array([0, 0, -9.8]),  # gravity[m / s ^ 2]
-                'strkplnAng': np.array([0, 45, 0]) * DEG2RAD,  # stroke plane(compare to body) [rad]
-                'rho': 1.225,  # air density
-                'TauExt': np.array([0, 0, 0]) * 1e-7,  # external torque body axes[Nm]
-                'time4Tau': np.array([10, 15]),  # initial and final time of the external torque[ms]
-                'I': 1.0e-12 * np.array([[0.1440, 0, 0], [0, 0.5220, 0], [0, 0, 0.5220]]),
-                # tensor of inertia[Kg m ^ 2]
-                'controlled': True,  # If true, calculate for each step, False for debugging against matlab version
-                't': 0,
-                'tsim_in': 0.0,  # simulation initial time[s]
-                'tsim_fin': .5,
-                'MaxStepSize': 1.0 / 16000
-
-            }
-            self.aero = {
-                'CLmax': 1.8,
-                'CDmax': 3.4,
-                'CD0': 0.4,
-                'r22': 0.4,
-            }
-
-            self.random = {
-                'randomize': False,
-                'seed': 1234,
-                'vel': np.array([0.2, 0.2, 0.2]),
-                'pqr': np.array([0, 2400.0, 0]) * DEG2RAD,
-                'ang': np.array([0, 60.0, 0]) * DEG2RAD
-            }
-
-            self.aero_model_R = AeroModel(self.wing['span'], self.wing['chord'], self.gen['rho'], self.aero['r22'],
-                                          self.aero['CLmax'], self.aero['CDmax'], self.aero['CD0'], self.wing['hingeR'],
-                                          self.wing['ACloc'])
-            self.aero_model_L = AeroModel(self.wing['span'], self.wing['chord'], self.gen['rho'], self.aero['r22'],
-                                          self.aero['CLmax'], self.aero['CDmax'], self.aero['CD0'], self.wing['hingeL'],
-                                          self.wing['ACloc'])
-
-            if self.random['randomize']:
-                self._seed = self.random['seed']
-                self._rng = np.random.default_rng(self._seed)
-            self.random_bound = {'vel': np.array([0.2, 0.2, 0.2]),
-                                 'pqr': np.array([0, 2400.0, 0]) * DEG2RAD,
-                                 'ang': np.array([0, 60.0, 0]) * DEG2RAD}
 
         if config_path is not None:
             self.load_config(config_path)
@@ -249,6 +171,8 @@ class flySimEnv(gym.Env):
             self._rng = np.random.default_rng(self.random['seed'])
         else:
             self._rng = np.random.default_rng()
+
+        # self.obs = np.concatenate([self.state, self.reward['set_point']])[[0, 1, 4, 7, 16]]
 
     def pitch_angle_over_88(self, t, y, *args):
         abs_minus_88 = np.abs(y[7] / DEG2RAD) - 88
@@ -343,8 +267,9 @@ class flySimEnv(gym.Env):
             self.tot_rwd = 0
 
         info = {'t': sol.t, 'traj_done': done}
+        self.obs = np.concatenate([self.state, self.reward['set_point']])[[0, 1, 4, 7, 16]]
 
-        return self.state, reward, done, info
+        return self.obs, reward, done, info
 
     def reset(self):
         if self.random['randomize']:
@@ -356,16 +281,18 @@ class flySimEnv(gym.Env):
             rnd_pqr = np.zeros(3)
             rnd_ang = np.zeros(3)
         x0 = np.concatenate([
-            self.body['BodIniVel'] + rnd_vel,
-            self.body['BodInipqr'] + rnd_pqr,
-            self.body['BodIniang'] + rnd_ang]).T
+            self.body['BodIniVel'] + rnd_vel*[1,1,0],
+            self.body['BodInipqr'] + rnd_pqr*[0,1,0],
+            self.body['BodIniang'] + rnd_ang*[0,1,0]]).T
         self.state = x0
         self.y0 = x0
         self.gen['t'] = 0
         if self.gen['controlled']:
             _ = self.step([0])
         self.tot_rwd = 0
-        return self.state
+        # obs = x0[]
+        self.obs = np.concatenate([self.state,self.reward['set_point']])[[0,1,4,7,16]]
+        return self.obs
 
     def render(self, mode='human'):
         return NotImplementedError('No Vis yet')
@@ -471,7 +398,7 @@ class flySimEnv(gym.Env):
 def test_zero_cont():
     import time
     # env = gym.make('flySim-v0')
-    env = flySimEnv()
+    env = flySimEnv_1D()
     env.gen['controlled'] = False
     o = env.reset()
     observations = []
@@ -490,7 +417,7 @@ def test_zero_cont():
 def test_zero():
     import time
     # env = gym.make('flySim-v0')
-    env = flySimEnv()
+    env = flySimEnv_1D()
     env.gen['controlled'] = True
     o = env.reset()
     observations = []
@@ -520,7 +447,7 @@ def test_zero():
 def test_random():
     import time
     # env = gym.make('flySim-v0')
-    env = flySimEnv()
+    env = flySimEnv_1D()
     env.gen['controlled'] = True
     o = env.reset()
     observations = []
@@ -553,7 +480,7 @@ def test_linear(i=0, seed=1234):
     Kp = 8 / 1000
     body_ref_pitch = -45 * DEG2RAD
     # env = gym.make('flySim-v0')
-    env = flySimEnv()
+    env = flySimEnv_1D()
     env.seed(seed)
     env.gen['controlled'] = True
     o = env.reset()
@@ -565,8 +492,13 @@ def test_linear(i=0, seed=1234):
     start = time.time()
     d = False
     while not d:
-        theta = o[7]
-        theta_dot = body_ang_vel_pqr(o[6:9], o[3:6], False)[1]
+        theta = o[2]
+        p = o[3]
+        angles = np.zeros((3,))
+        pqr = np.zeros((3,))
+        angles[1] = theta
+        pqr[1] = p
+        theta_dot = body_ang_vel_pqr(angles, pqr, False)[1]
         delta_phi = theta_dot * Kp + (theta - (body_ref_pitch)) * Ki
         a = [delta_phi]
         observations.append(o)
