@@ -155,7 +155,7 @@ class flySimEnv_1D(gym.Env):
     def __init__(self, config_path=None):
         super(flySimEnv_1D, self).__init__()
         self.state = None
-        self.observation_space = spaces.Box(-np.inf, np.inf, shape=(5,))  #[u,v,q,theta,theta_ref]
+        self.observation_space = spaces.Box(-np.inf, np.inf, shape=(4,))  #[u,v,q,theta_error]
         self.action_space = spaces.Box(-0.1, +0.1, (2,), dtype=np.float32)
         self.tot_rwd = 0
 
@@ -267,7 +267,9 @@ class flySimEnv_1D(gym.Env):
             self.tot_rwd = 0
 
         info = {'t': sol.t, 'traj_done': done}
-        self.obs = np.concatenate([self.state, self.reward['set_point']])[[0, 1, 4, 7, 16]]
+        self.obs = self.state[[0,1,4,7]].copy()
+        self.obs[3] =self.obs[3] - self.reward['set_point'][7]*DEG2RAD
+        # self.obs = np.concatenate([self.state, self.reward['set_point']*DEG2RAD])[[0, 1, 4, 7, 16]]
 
         return self.obs, reward, done, info
 
