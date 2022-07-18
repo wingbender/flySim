@@ -265,6 +265,8 @@ class flySimEnv_1D(gym.Env):
             done = True
         if done:
             self.tot_rwd = 0
+        if self.reward is not None and 'constant' in self.reward:
+            reward += self.reward['constant']
 
         info = {'t': sol.t, 'traj_done': done}
         self.obs = self.state[[0,1,4,7]].copy()
