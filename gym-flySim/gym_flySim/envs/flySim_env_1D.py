@@ -154,10 +154,15 @@ class flySimEnv_1D(gym.Env):
 
     def __init__(self, config_path=None):
         super(flySimEnv_1D, self).__init__()
+        self.path = os.path.abspath(inspect.getfile(self.calc_u))
+        mtime = os.path.getmtime(self.path)
+        self.mtime = datetime.datetime.fromtimestamp(mtime)
+        print(f'environment last changed at: {self.mtime}')
         self.state = None
         self.observation_space = spaces.Box(-np.inf, np.inf, shape=(4,))  #[u,v,q,theta_error]
-        self.action_space = spaces.Box(-0.1, +0.1, (2,), dtype=np.float32)
+        self.action_space = spaces.Box(-20, +20, (2,), dtype=np.float32)
         self.tot_rwd = 0
+        self.is_stuck = False
 
         if config_path is not None:
             self.load_config(config_path)
@@ -220,15 +225,19 @@ class flySimEnv_1D(gym.Env):
         self.gen['t'] += 1
         tau_ext = self.gen['TauExt'] * (
                 self.gen['time4Tau'][0] < self.gen['t'] < self.gen['time4Tau'][1])
+        if not hasattr(action, "__len__"):
+            action = np.array([action])
         u = self.calc_u(action)
         if not hasattr(self, 'y0'):
             self.y0 = self.state[:9]
         if self.gen['controlled']:  # To calculate one step
             tvec = np.linspace(0, self.wing['T'], 5)
-
-            sol = solve_ivp(self._fly_sim, [0, self.wing['T']], self.y0, method=self.solver['method'], t_eval=tvec,
-                            args=[tau_ext, u], atol=self.solver['atol'], rtol=self.solver['rtol'],
-                            events=self.pitch_angle_over_88)
+            if not self.is_stuck:
+                sol = solve_ivp(self._fly_sim, [0, self.wing['T']], self.y0, method=self.solver['method'], t_eval=tvec,
+                                args=[tau_ext, u], atol=self.solver['atol'], rtol=self.solver['rtol'],
+                                events=self.pitch_angle_over_88)
+                self.y0 = sol.y[:, -1]
+                self.state = np.mean(sol.y[:, [1, 3]], axis=1)
 
         else:  # To calculate all flight
             tvec = np.arange(self.gen['tsim_in'], self.gen['tsim_fin'], self.wing['T'] / 4)  # self.gen['MaxStepSize'])
@@ -238,41 +247,47 @@ class flySimEnv_1D(gym.Env):
             avg_sol = (sol.y[:, 3::4] + sol.y[:, 1::4]) / 2
 
             return avg_sol.T, 0, False, 'none'
-        self.y0 = sol.y[:, -1]
 
-        self.state = np.mean(sol.y[:, [1, 3]], axis=1)
         done = self.gen['t'] >= self.gen['tsim_fin'] / self.wing['T']
-        if self.reward is not None and self.reward['target']:
-            if np.abs(self.state[7] / DEG2RAD + 45) <= 5 and np.abs(self.state[4]) / DEG2RAD <= 10:
-                reward = self.reward['target']
-                self.tot_rwd += reward
-                done = True
-        elif 'gains' in self.reward:
-            obs_temp = self.state.copy()
-            obs_temp[3:] = obs_temp[3:] / DEG2RAD  # Convert angles and angular velocities to degrees
-            obs_temp = obs_temp - self.reward['set_point']  # from absolute values to errors w.r.t set point
-            obs_temp = np.abs(
-                obs_temp)  # this makes sure we only give negative reward (remember, this is not a controller gain)
-            obs_temp[7:] = obs_temp[7:] % 360  # if we're back where we started we want to stay there
-            reward = sum(self.reward['gains'] * obs_temp)
-            # reward = self.reward['gains'][7]* (np.abs(self.state[7] / DEG2RAD + 45) % 360)+...
+        reward = 0
+        if self.is_stuck or len(sol.t_events[0]) >= 1: #if the fly is stuck then it stays there for the entire episode
+            self.is_stuck = True
+            reward =  self.reward['min_step_reward']
         else:
-            reward = -0.1 * (np.abs(self.state[7] / DEG2RAD + 45) % 360) #- 0.0005 * (np.abs(self.state[4] / DEG2RAD))
-            self.tot_rwd += reward
-        if len(sol.t_events[0]) >= 1:
-            reward = -200
-            self.tot_rwd += reward
-            done = True
-        if done:
-            self.tot_rwd = 0
-        if self.reward is not None and 'constant' in self.reward:
-            reward += self.reward['constant']
+            if self.reward['target']:  # TODO: This is still hard coded, make this configurable later
+                if np.abs(self.state[7] / DEG2RAD + 45) <= 5 and np.abs(self.state[4]) / DEG2RAD <= 100:
+                    reward = self.reward['target']
+                    self.tot_rwd += reward
+                    print('Reached Target!')
+                    done = True
+        if not done and not self.is_stuck:
+            if 'gains' in self.reward:
+                obs_temp = self.state.copy()
+                obs_temp[3:] = obs_temp[3:] / DEG2RAD  # Convert angles and angular velocities to degrees
+                obs_temp = obs_temp - self.reward['set_point']  # from absolute values to errors w.r.t set point
+                obs_temp = np.abs(obs_temp)  # this makes sure we only give negative reward (remember, this is not a
+                # controller gain)
+                obs_temp[7:] = obs_temp[7:] % 360  # if we're back where we started we want to stay there
+                reward = sum(self.reward['gains'] * obs_temp)
+                # reward = self.reward['gains'][7]* (np.abs(self.state[7] / DEG2RAD + 45) % 360)+...
+            elif 'divide' in self.reward:
+                # C/(|e_theta(deg)|+eps)
+                reward_C= self.reward['divide']['C']
+                reward_eps = self.reward['divide']['eps']
+                reward = reward_C / (np.abs(self.state[7] / DEG2RAD + 45) % 360 + reward_eps)
+            else:
+                reward = -0.1 * (np.abs(self.state[7] / DEG2RAD + 45) % 360) #- 0.0005 * (np.abs(self.state[4] / DEG2RAD))
+            if 'constant' in self.reward:
+                reward += self.reward['constant']
+            if 'action_lambda' in self.reward:
+                reward +=self.reward['action_lambda']*np.abs(action[0])
+            if 'multiplier' in self.reward:
+                reward *= self.reward['multiplier']
 
-        info = {'t': sol.t, 'traj_done': done}
+        info = {'t': tvec, 'traj_done': done}
         self.obs = self.state[[0,1,4,7]].copy()
         self.obs[3] =self.obs[3] - self.reward['set_point'][7]*DEG2RAD
         # self.obs = np.concatenate([self.state, self.reward['set_point']*DEG2RAD])[[0, 1, 4, 7, 16]]
-
         return self.obs, reward, done, info
 
     def reset(self):
@@ -295,7 +310,10 @@ class flySimEnv_1D(gym.Env):
             _ = self.step([0])
         self.tot_rwd = 0
         # obs = x0[]
-        self.obs = np.concatenate([self.state,self.reward['set_point']])[[0,1,4,7,16]]
+        self.obs = self.state[[0, 1, 4, 7]].copy()
+        self.obs[3] = self.obs[3] - self.reward['set_point'][7] * DEG2RAD
+        self.is_stuck = False
+        # self.obs = np.concatenate([self.state,self.reward['set_point']])[[0,1,4,7,16]]
         return self.obs
 
     def render(self, mode='human'):
@@ -385,12 +403,10 @@ class flySimEnv_1D(gym.Env):
             self.wing['psi'][2:4],
             self.wing['theta'][2: 4],
             self.wing['phi'][2:4]]).T
-        if not hasattr(action, "__len__"):
-            action = np.array([action])
         # delta_clip prevents the wings from going over 180 or under 0 degrees
         delta_clip = min(self.wing['phi'][0] - self.wing['phi'][1],  # Calculation of backwards for left wing
                          180 * DEG2RAD - self.wing['phi'][2] + self.wing['phi'][3])  # Same calculation for fwd
-        delta_phi = min(action[0], delta_clip)
+        delta_phi = min(action[0]*DEG2RAD, delta_clip)
 
         u0[4] = self.wing['phi'][0] - delta_phi / 2  # Change in middle point of the stroke (Left)
         u0[5] = self.wing['phi'][1] + delta_phi / 2  # Change in the amplitude of the stroke (Left)
@@ -478,7 +494,7 @@ def test_random():
     np.savez('test_res_rand', actions=actions, rewards=rewards, observations=observations)
 
 
-def test_linear(i=0, seed=1234):
+def test_linear(i=0, seed=1111):
     import time
     Ki = 0.5
     Kp = 8 / 1000
@@ -496,14 +512,14 @@ def test_linear(i=0, seed=1234):
     start = time.time()
     d = False
     while not d:
-        theta = o[2]
-        p = o[3]
+        theta_e = o[3]
+        p = o[2]
         angles = np.zeros((3,))
         pqr = np.zeros((3,))
-        angles[1] = theta
+        angles[1] = theta_e*DEG2RAD
         pqr[1] = p
         theta_dot = body_ang_vel_pqr(angles, pqr, False)[1]
-        delta_phi = theta_dot * Kp + (theta - (body_ref_pitch)) * Ki
+        delta_phi = (theta_dot * Kp + (theta_e) * Ki)/DEG2RAD
         a = [delta_phi]
         observations.append(o)
         o, r, d, info = env.step(a)
